@@ -104,26 +104,51 @@ let rec affiche_phi l =
 	| [] -> print_char '\n'
 	| (phi, elems)::t -> print_string phi; print_int_list elems; affiche_phi t;;
 
-(* insertion d'un mot dans la liste : 
-s'il y est déja, ajout de la clé à la liste de valeurs 
-sinon création du mot et de la liste de valeurs *)
-let rec insert_phi_in_list l p k =
-	match l with
-	| [] -> (p, k::[])::l
-	| (phi, elems)::[] ->  if phi = p then (phi, k::elems)::[] else (phi, elems)::(p, k::[])::[]
-	| h::t -> match h with
-		| (phi, elems) -> if phi = p then (phi, k::elems)::t else h::insert_phi_in_list t p k;;
+(* renvoie la liste de valeurs associées au mot phi *)
+let rec get_vals_of_phi l p =
+    match l with
+    | [] -> []
+    | (phi, elems)::t -> if phi = p then elems else get_vals_of_phi t p;;
+
+(* vérifie si l contient le mot phi *)
+let rec not_contains phi l =
+    match l with
+    | [] -> true
+    | (p, el)::t -> if p = phi then false else not_contains phi t;;
+
+(* renvoie la liste des mots de l2 qui ne sont pas dans l1 *)
+let rec get_different_phis l1 l2 =
+    match l2 with
+    | [] -> []
+    | (p, el)::t -> 
+        if not_contains p l1 then (p, el)::(get_different_phis l1 t)
+        else get_different_phis l1 t;;
+
+(* fusionne deux listes de mots ensemble 
+	("()", [1;5])::("()()", [3]) et 
+	("()", [7])::("(())", [8]) donnent
+	("()", [1;5;7])::("()()", [3]) *)
+let fusionne_phi l1 l2 =
+    let rec fp_aux l1 l2 =
+        match l1 with
+        | [] -> []
+        | (_, [])::_ -> []
+        | (phi, elems)::t ->
+            let elems2 = get_vals_of_phi l2 phi in
+            (phi, elems@elems2)::(fp_aux t l2)
+    in
+
+    let mergedList = (fp_aux l1 l2) in
+    mergedList@(get_different_phis mergedList l2);;
 
 (* parcours de l'arbre pour constituer la liste de mots *)
-let parcoursCompPhi abr = 
-	let rec parcoursCompPhi_aux abr l =
-		match abr with
-		| Vide -> []
-		| Noeud(Vide, k, Vide, p) -> insert_phi_in_list l p k
-		| Noeud(left, k, right, p) -> insert_phi_in_list (parcoursCompPhi_aux right (parcoursCompPhi_aux left l)) p k
-	in
-
-	parcoursCompPhi_aux abr [];;
+let rec parcours_comp_phi abr = 
+    match abr with
+    | Vide -> []
+    | Noeud(Vide, k, Vide, p) -> (p, k::[])::[]
+    | Noeud(Vide, k, right, p) -> (p, k::[])::(parcours_comp_phi right)
+    | Noeud(left, k, Vide, p) -> (p, k::[])::(parcours_comp_phi left)
+    | Noeud(left, k, right, p) -> (p, k::[])::(fusionne_phi (parcours_comp_phi left) (parcours_comp_phi right));;
 
 
 (* EXEMPLES/TESTS : *)
