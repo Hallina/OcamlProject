@@ -162,9 +162,9 @@ let get_elems phi phiList =
     ge_aux phi phiList;;
 
 type  abr_compressed_list = 
-    | Empty
-    | Transition of int * abr_compressed_list ref
-    | Node of branch list and branch = {mutable fg: abr_compressed_list; mutable lbl: int list; mutable fd: abr_compressed_list};;
+    | ACL_Empty
+    | ACL_Transition of int * abr_compressed_list ref
+    | ACL_Node of branch list and branch = {mutable fg: abr_compressed_list; mutable lbl: int list; mutable fd: abr_compressed_list};;
 
 (* générateur d'identifiant *)
 class identifier =
@@ -179,7 +179,7 @@ let elems2node_list phi elems phiHash =
     let rec e2ell_aux elems el =
         match elems with
         | [] -> el
-        | h::t -> e2ell_aux t ({fg = Empty; lbl = [h]; fd = Empty}::el)
+        | h::t -> e2ell_aux t ({fg = ACL_Empty; lbl = [h]; fd = ACL_Empty}::el)
     in
 
     let res = List.rev (e2ell_aux elems []) in
@@ -191,15 +191,15 @@ let elems2node_list phi elems phiHash =
     un pointeur vers le noeud est stocké dans une hash map dont la clé est le mote correspondant au noeud *)
 let rec acl_add phi elems acl phiHash = 
     match acl with
-    | Transition (_) | Node([]) -> assert false
-    | Empty -> Node((elems2node_list phi elems phiHash))
-    | Node({fg; lbl; fd}::t) ->
+    | ACL_Transition (_) | ACL_Node([]) -> assert false
+    | ACL_Empty -> ACL_Node((elems2node_list phi elems phiHash))
+    | ACL_Node({fg; lbl; fd}::t) ->
         let k = List.hd lbl in
         let n = List.hd elems in
 
         if n = k then acl
-        else if n < k then Node({fg = (acl_add phi elems fg phiHash); lbl = lbl; fd = fd}::t)
-        else Node({fg = fg; lbl = lbl; fd = (acl_add phi elems fd phiHash)}::t);;
+        else if n < k then ACL_Node({fg = (acl_add phi elems fg phiHash); lbl = lbl; fd = fd}::t)
+        else ACL_Node({fg = fg; lbl = lbl; fd = (acl_add phi elems fd phiHash)}::t);;
 
 (* transforme la liste des mots en arbre *)
 let phiList2acl l phiHash =
@@ -212,7 +212,7 @@ let phiList2acl l phiHash =
             let newAcl = acl_add phi elems acl phiHash in
             list2acl_aux t newAcl;
     in
-    list2acl_aux l Empty;;
+    list2acl_aux l ACL_Empty;;
 
 (* renvoie la valeur du noeud précédent (dans l'abr) *)
 let rec get_valPred n abr =
@@ -270,8 +270,8 @@ let rec build_links node branchNode abrp map id =
         let branchPred = get_branch_from_node valPred nodePred in
         let newTransition = id#get_id in
 
-        if valBranch < valPred then branchPred.fg <- Transition(newTransition, ref branchNode)
-        else branchPred.fd <- Transition(newTransition, ref branchNode);
+        if valBranch < valPred then branchPred.fg <- ACL_Transition(newTransition, ref branchNode)
+        else branchPred.fd <- ACL_Transition(newTransition, ref branchNode);
 
         add_transitions_to_branch branch (List.tl branchPred.lbl) newTransition;
         build_links t branchNode abrp map id;
@@ -286,10 +286,10 @@ let get_acl abrPhi phiList =
 
     let rec ab_aux acl =
         match acl with
-        | Node([]) -> assert false
-        | Transition(_)
-        | Empty -> ()
-        | Node({fg; lbl; fd}::nextBranch) ->
+        | ACL_Node([]) -> assert false
+        | ACL_Transition(_)
+        | ACL_Empty -> ()
+        | ACL_Node({fg; lbl; fd}::nextBranch) ->
             build_links nextBranch acl abrPhi phiHash id;
             ab_aux fg;
             ab_aux fd;
@@ -297,7 +297,42 @@ let get_acl abrPhi phiList =
 
     ab_aux acl;
     acl;;
-    
+
+(* compare deux listes d'entiers entre elles *)
+let rec compare_transitions t1 t2 =
+    match t1, t2 with
+    | [], [] -> true
+    | [], _ | _, [] -> false
+    | h1::t1, h2::t2 -> if h1 = h2 then compare_transitions t1 t2 else false;;
+
+ (* renvoie la branche correspondant aux transitions *)
+ let rec get_branch_by_transitions transitions acl =
+    match acl with
+    | ACL_Empty | ACL_Transition(_) | ACL_Node([]) -> assert false
+    | ACL_Node(({fg; lbl; fd})::nextBranch) ->
+        if compare_transitions (List.tl lbl) transitions then acl
+        else get_branch_by_transitions transitions (ACL_Node(nextBranch))
+
+(* recherche dans un ACL *)
+let rec acl_search v acl =
+    let rec as_aux acl transitions =
+        match acl with
+        | ACL_Node([]) -> assert false
+        | ACL_Empty -> ACL_Empty
+
+        | ACL_Transition(t, r) -> 
+            let branch = get_branch_by_transitions (t::transitions) !r in
+            as_aux branch []; 
+
+        | ACL_Node(({fg; lbl; fd})::_) as node ->
+            let valBranch = List.hd lbl in
+
+            if v = valBranch then node
+            else if v < valBranch then as_aux fg (List.tl lbl)
+            else as_aux fd (List.tl lbl);
+    in
+
+    as_aux acl [];;
 
 let l = gen_permutation 30 in 
 
@@ -313,5 +348,10 @@ printf "phiList :\n";
 print_phiList phiList;
 
 let acl = get_acl abrPhi phiList in
+let valToSearch = 12 in
+let node = acl_search 12 acl in
+
+if node != ACL_Empty then printf "La valeur %d se trouve dans l'ACL.\n" valToSearch
+else printf "La valeur %d ne se trouve pas dans l'ACL.\n" valToSearch;
 
 exit 0;;
