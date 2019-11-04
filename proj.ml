@@ -1,7 +1,8 @@
-(*1.1 Synthèse de données*)
+(* 1.1 Synthèse de données *)
 
-(* Random.self_init() *)
-Random.init 100;;
+Random.self_init();
+open Printf;;
+(*Random.init 100;*)
 
 (*affichage d'une liste d'entier*)
 let print_int_list l = 
@@ -32,29 +33,21 @@ let rec vidage l p acc =
 
 (*question 1.2*)
 let gen_permutation n =
-    let l = init_list [] n in
-    let p = [] in
-
-    print_string "gen_permutation - liste initiale : "; print_int_list l;
-
-    let res = vidage l p n in
-
-    print_string "gen_permutation - liste finale : "; print_int_list res;
-
-    res;;
+    vidage (init_list [] n) [] n;;
 
 (*1.2 Construction de l'ABR*)
 
-type 'a abr = Empty | Node of ('a abr * 'a * 'a abr);;
+type abr = E | N of (abr * int * abr);;
 
 (*affichage d'un abr (parcours infixe)*)
 let print_abr abr =
     let rec print_abr_aux abr =
         match abr with
-        | Empty -> ()
-        | Node(left, k, right) ->   print_abr_aux left;
-                                    print_int k; print_string ", ";
-                                    print_abr_aux right
+        | E -> ()
+        | N(left, k, right) ->   
+            print_abr_aux left;
+            print_int k; print_string ", ";
+            print_abr_aux right
         in
 
     print_abr_aux abr;
@@ -63,11 +56,11 @@ let print_abr abr =
 (*ajout d'une feuille dans un arbre (Q1.3)*)
 let rec add n abr = 
     match abr with
-    | Empty -> Node(Empty, n, Empty)
-    | Node(left, k, right) -> 
+    | E -> N(E, n, E)
+    | N(left, k, right) -> 
         if n = k then abr
-        else if n < k then Node((add n left), k, right)
-        else Node(left, k, (add n right));;
+        else if n < k then N((add n left), k, right)
+        else N(left, k, (add n right));;
 
 (*question 1.3*)
 let list2abr l =
@@ -77,46 +70,57 @@ let list2abr l =
         | h::t -> list2abr_aux t (add h abr)
     in
 
-    list2abr_aux l Empty;;
+    list2abr_aux l E;;
 
-let l = gen_permutation 10 in
-let t = list2abr l in
-print_abr (t);; 
 
 (*2 - Compression des ABR*)
+
+type 'a abrPhi = Vide | Noeud of ('a abrPhi * 'a * 'a abrPhi * string);;
+
+let print_abrPhi abr =
+    let rec pap_aux abr =
+        match abr with
+        | Vide -> ()
+        | Noeud(left, k, right, phi) -> 
+            pap_aux left;
+            printf "%d, %s; " k phi;
+            pap_aux right
+        in
+
+    pap_aux abr;
+    print_char '\n';;
 
 (* question 2.4 *)
 let rec phi abr =
     match abr with
-    | Empty -> ""
-    | Node(left, k, right) -> "(" ^ (phi left) ^ ")" ^ (phi right);;
+    | E -> ""
+    | N(left, k, right) -> "(" ^ (phi left) ^ ")" ^ (phi right);;
 
-type 'a abrPhi = Vide | Noeud of ('a abrPhi * 'a * 'a abrPhi * string);;
-
-let rec abr_phi abr =
+(* créé un arbre dont les noeuds contiennent le mot associé aux sous-arbre *)
+let rec abr2abrPhi abr =
     match abr with
-    | Empty -> Vide
-    | Node(left, k, right) -> Noeud((abr_phi left), k, (abr_phi right), (phi abr));;
+    | E -> Vide
+    | N(left, k, right) -> Noeud((abr2abrPhi left), k, (abr2abrPhi right), (phi abr));;
 
-(* affichage des mots situés dans les noeuds *)
-let rec affiche_phi l =
+(* affiche la liste de mots l *)
+let rec print_phiList l =
     match l with
     | [] -> print_char '\n'
-    | (phi, elems)::t -> print_string phi; print_int_list elems; affiche_phi t;;
+    | (phi, elems)::t -> print_string phi; print_int_list elems; print_phiList t;;
 
-(* renvoie la liste de valeurs associées au mot phi *)
+(* renvoie les valeurs correspondant au mot p *)
 let rec get_vals_of_phi l p =
     match l with
     | [] -> []
     | (phi, elems)::t -> if phi = p then elems else get_vals_of_phi t p;;
 
-(* vérifie si l contient le mot phi *)
+(* teste l'appartenance d'un mot à une liste *)
 let rec not_contains phi l =
     match l with
     | [] -> true
     | (p, el)::t -> if p = phi then false else not_contains phi t;;
 
-(* renvoie la liste des mots de l2 qui ne sont pas dans l1 *)
+(* renvoie la liste des mots de l2 que l1 ne contient pas *)
 let rec get_different_phis l1 l2 =
     match l2 with
     | [] -> []
@@ -124,42 +128,190 @@ let rec get_different_phis l1 l2 =
         if not_contains p l1 then (p, el)::(get_different_phis l1 t)
         else get_different_phis l1 t;;
 
-(* fusionne deux listes de mots ensemble 
-    ("()", [1;5])::("()()", [3]) et 
-    ("()", [7])::("(())", [8]) donnent
-    ("()", [1;5;7])::("()()", [3]) *)
-let fusionne_phi l1 l2 =
-    let rec fp_aux l1 l2 =
+(* fusionnes deux listes de mots *)
+let merge_phi l1 l2 =
+    let rec m_aux l1 l2 =
         match l1 with
         | [] -> []
         | (_, [])::_ -> []
         | (phi, elems)::t ->
             let elems2 = get_vals_of_phi l2 phi in
-            (phi, elems@elems2)::(fp_aux t l2)
+            (phi, elems@elems2)::(m_aux t l2)
     in
 
-    let mergedList = (fp_aux l1 l2) in
+    let mergedList = (m_aux l1 l2) in
     mergedList@(get_different_phis mergedList l2);;
 
 (* parcours de l'arbre pour constituer la liste de mots *)
 let rec parcours_comp_phi abr = 
+        match abr with
+        | Vide -> []
+        | Noeud(Vide, k, Vide, p) -> [(p, [k])]
+        | Noeud(Vide, k, right, p) -> (p, [k])::(parcours_comp_phi right)
+        | Noeud(left, k, Vide, p) -> (p, [k])::(parcours_comp_phi left)
+        | Noeud(left, k, right, p) -> (p, [k])::(merge_phi (parcours_comp_phi left) (parcours_comp_phi right));;
+
+(* renvoie les valeurs associées au mot *)
+let get_elems phi phiList =
+    let rec ge_aux phi phiList =
+        match phiList with
+        | [] -> []
+        | (p, elems)::t ->  if p = phi then elems else ge_aux phi t
+    in
+
+    ge_aux phi phiList;;
+
+type  abr_compressed_list = 
+    | Empty
+    | Transition of int * abr_compressed_list ref
+    | Node of branch list and branch = {mutable fg: abr_compressed_list; mutable lbl: int list; mutable fd: abr_compressed_list};;
+
+(* générateur d'identifiant *)
+class identifier =
+    object
+      val mutable id = 0
+      method get_id = id
+      method new_id = id <- id + 1; id
+    end;;
+
+(* convertit une liste d'entiers en noeud (liste de branches) *)
+let elems2node_list phi elems phiHash =
+    let rec e2ell_aux elems el =
+        match elems with
+        | [] -> el
+        | h::t -> e2ell_aux t ({fg = Empty; lbl = [h]; fd = Empty}::el)
+    in
+
+    let res = List.rev (e2ell_aux elems []) in
+    Hashtbl.add phiHash phi (ref res);
+
+    res;;
+
+(*  ajout d'un noeuc à un ACL, 
+    un pointeur vers le noeud est stocké dans une hash map dont la clé est le mote correspondant au noeud *)
+let rec acl_add phi elems acl phiHash = 
+    match acl with
+    | Transition (_) | Node([]) -> assert false
+    | Empty -> Node((elems2node_list phi elems phiHash))
+    | Node({fg; lbl; fd}::t) ->
+        let k = List.hd lbl in
+        let n = List.hd elems in
+
+        if n = k then acl
+        else if n < k then Node({fg = (acl_add phi elems fg phiHash); lbl = lbl; fd = fd}::t)
+        else Node({fg = fg; lbl = lbl; fd = (acl_add phi elems fd phiHash)}::t);;
+
+(* transforme la liste des mots en arbre *)
+let phiList2acl l phiHash =
+    let rec list2acl_aux l acl = 
+        match l with
+        | [] -> acl
+        | (phi, elems)::t -> 
+            printf "inserting %d\n" (List.hd elems);
+
+            let newAcl = acl_add phi elems acl phiHash in
+            list2acl_aux t newAcl;
+    in
+    list2acl_aux l Empty;;
+
+(* renvoie la valeur du noeud précédent (dans l'abr) *)
+let rec get_valPred n abr =
     match abr with
-    | Vide -> []
-    | Noeud(Vide, k, Vide, p) -> (p, k::[])::[]
-    | Noeud(Vide, k, right, p) -> (p, k::[])::(parcours_comp_phi right)
-    | Noeud(left, k, Vide, p) -> (p, k::[])::(parcours_comp_phi left)
-    | Noeud(left, k, right, p) -> (p, k::[])::(fusionne_phi (parcours_comp_phi left) (parcours_comp_phi right));;
+    | Vide -> assert false
+    | Noeud(l, k, r, p) ->
+        if n < k then
+            match l with
+            | Vide -> assert false
+            | Noeud(ll, lk, lr, rp) -> 
+                if n = lk then k
+                else get_valPred n l
 
+        else 
+            match r with
+                | Vide -> assert false
+                | Noeud(rl, rk, rr, rp) -> 
+                    if n = rk then k
+                    else get_valPred n r;;
 
-(* EXEMPLES/TESTS : *)
-(* liste de base *)
-let l = [4; 2; 3; 8; 1; 9; 6; 7; 5] in
+(* renvoie le mot associé à la valeur v *)
+let rec get_phi_from_val v abrp =
+    match abrp with
+    | Vide -> assert false (* v est forcément dans l'arbre *)
+    | Noeud(l, k, r, phi) -> 
+        if v = k then phi
+        else if v < k then get_phi_from_val v l
+        else get_phi_from_val v r;;
 
-(* abr associé *)
-let t = list2abr l in
+(* ranvoie la branche qui contient la valeur v dans le noeud n *)
+let rec get_branch_from_node v n =
+    match n with
+    | [] -> assert false
+    | ({fg; lbl; fd} as branch)::t -> 
+        if List.hd lbl = v then branch else get_branch_from_node v t;;
 
-(* abr avec mots (styles ((())))() *)
-let abrPhi = abr_phi t in
+(* ajoute les étiquettes de transition à une branche *)
+let add_transitions_to_branch branch toGetThere newTransition =
+    let valBranch = List.hd branch.lbl in
 
-(* génération de la liste de mots avec valeurs associées  *)
-affiche_phi (parcoursCompPhi abrPhi);;
+    branch.lbl <- valBranch::newTransition::toGetThere;;
+
+(* créé les transition branche vers noeud *)
+let rec build_links node branchNode abrp map id =
+    match node with
+    | [] -> ();
+    | ({fg; lbl; fd} as branch)::t ->
+        let valBranch = List.hd lbl in
+        let valPred = get_valPred (List.hd lbl) abrp in
+        let phiPred = get_phi_from_val valPred abrp in
+        let nodePred = !(Hashtbl.find map phiPred) in 
+
+        printf "Linking node %d to node containing %d.\n" valPred valBranch;
+
+        let branchPred = get_branch_from_node valPred nodePred in
+        let newTransition = id#get_id in
+
+        if valBranch < valPred then branchPred.fg <- Transition(newTransition, ref branchNode)
+        else branchPred.fd <- Transition(newTransition, ref branchNode);
+
+        add_transitions_to_branch branch (List.tl branchPred.lbl) newTransition;
+        build_links t branchNode abrp map id;
+    ;;
+
+(*  construit l'arbre compressé 
+    (construction des noeuds présents dans phiList puis chaînage) *)
+let get_acl abrPhi phiList =
+    let phiHash = Hashtbl.create 15 in
+    let id = new identifier in
+    let acl = phiList2acl phiList phiHash in
+
+    let rec ab_aux acl =
+        match acl with
+        | Node([]) -> assert false
+        | Transition(_)
+        | Empty -> ()
+        | Node({fg; lbl; fd}::nextBranch) ->
+            build_links nextBranch acl abrPhi phiHash id;
+            ab_aux fg;
+            ab_aux fd;
+    in
+
+    ab_aux acl;
+    acl;;
+    
+
+let l = gen_permutation 30 in 
+
+printf "Liste initiale :\n";
+print_int_list l;
+
+let abr = list2abr l in
+let abrPhi = abr2abrPhi abr in
+
+let phiList = parcours_comp_phi abrPhi in 
+
+printf "phiList :\n";
+print_phiList phiList;
+
+let acl = get_acl abrPhi phiList in
+
+exit 0;;
