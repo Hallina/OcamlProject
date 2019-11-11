@@ -470,6 +470,30 @@ let create_acm acl abrp =
     build_acm acl acm abrp phiHash;
     acm;;
 
+(* recherche dans un AcM *)
+let rec acm_find acm v =
+    let rec af_aux acm transitions =
+        match acm with
+        | ACM_Empty -> false
+        | ACM_Transition(t, r) -> 
+            let newTransitions = (string_of_int t) ^ ";" ^ transitions in
+            let node = !r in
+            let valBranch = Hashtbl.find node.map newTransitions in
+
+            if v = valBranch then true
+            else if v < valBranch then af_aux node.fg newTransitions
+            else af_aux node.fd newTransitions
+
+        | ACM_Node(node) ->
+            let valBranch = Hashtbl.find node.map transitions in
+
+            if v = valBranch then true
+            else if v < valBranch then af_aux node.fg transitions
+            else af_aux node.fd transitions
+    in
+
+    af_aux acm "";;
+
 let l = gen_permutation tailleListe in
 
 printf "Liste initiale :\n";
@@ -490,5 +514,8 @@ if (acl_find acl valToSearch) then printf "\nLa valeur %d est dans l'ACL.\n" val
 else printf "\nLa valeur %d n'est pas dans l'ACL.\n" valToSearch;
 
 let acm = create_acm acl abrPhi in
+
+if (acm_find acm valToSearch) then printf "\nLa valeur %d est dans l'ACM.\n" valToSearch
+else printf "\nLa valeur %d n'est pas dans l'ACM.\n" valToSearch;
 
 exit 0;;
