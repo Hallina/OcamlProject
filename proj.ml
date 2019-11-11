@@ -389,6 +389,87 @@ let rec acl_find acl v =
 
     af_aux acl [];;
 
+type  abr_compressed_map = 
+    | ACM_Empty
+    | ACM_Transition of int * acm_node ref
+    | ACM_Node of acm_node
+        and acm_node = {mutable fg: abr_compressed_map; map: ((string, int) Hashtbl.t); mutable fd: abr_compressed_map};;
+
+(* convertit les branches d'un noeud d'ACL vers un noeud ACM *)
+let acl_node2acm_node aclNode map =
+    let rec an2am_aux branchList =
+        match branchList with
+        | [] -> (); printf "\n";
+        | branch::nextBranches ->
+            let key = (int_list2string (List.tl branch.values)) in
+            let value = List.hd branch.values in
+
+            printf "\"%s\" -> %d; " key value;
+
+            Hashtbl.add map key value;
+            an2am_aux nextBranches
+    in
+
+    an2am_aux aclNode.branches;;
+        
+(* convertit un ACL vers un ACM incomplet (sans les transitions) *)
+let acl2acm aclNode abrp pmap =
+    let rec a2a_aux aclNode =
+        match aclNode with
+        | ACL_Transition(_) | ACL_Empty -> ACM_Empty
+        | ACL_Node(aclNode) ->
+            let acmNode = {
+                fg = a2a_aux aclNode.fg; 
+                map = Hashtbl.create (List.length aclNode.branches);
+                fd = a2a_aux aclNode.fd} in
+
+            let vl = List.hd (List.hd aclNode.branches).values in
+            let phiKey = get_phi_from_val vl abrp in
+
+            printf "Node %d : " vl;
+
+            acl_node2acm_node aclNode acmNode.map;      
+
+            Hashtbl.add pmap phiKey (ref acmNode);
+
+            ACM_Node(acmNode)
+    in
+
+    a2a_aux aclNode;;
+
+(* complète l'ACM en ajoutant les transitions à partir de l'ACL *)
+let rec build_acm acl acm abrp pmap =
+
+    (* met à jour les transitions du parent (fonction auxiliaire pour factoriser le code) *)
+    let rec ba_aux aclSon aclParent acmSon acmParent isLeft =
+        match aclSon, acmSon with
+        | ACL_Node(_), ACM_Node(_) -> build_acm aclSon acmSon abrp pmap;
+        | ACL_Transition(t, r), ACM_Empty ->
+            let vl = List.hd (List.hd (!r).branches).values in
+            let phi = get_phi_from_val vl abrp in
+            let node = Hashtbl.find pmap phi in
+
+            if isLeft then acmParent.fg <- ACM_Transition(t, node)
+            else acmParent.fd <- ACM_Transition(t, node);
+
+            printf "Adding transition %d to node %d.\n" t vl;
+        | _, _ -> ()
+    in
+
+    match acl, acm with
+    | ACL_Node(aclNode), ACM_Node(acmNode) ->
+        ba_aux aclNode.fg aclNode acmNode.fg acmNode true;
+        ba_aux aclNode.fd aclNode acmNode.fd acmNode false;
+    | _, _ -> ();;
+
+(* construit l'arbre compressé qui utilise une map pour les transitions *)
+let create_acm acl abrp =
+    let phiHash = Hashtbl.create tailleListe in
+    let acm = acl2acm acl abrp phiHash in
+
+    build_acm acl acm abrp phiHash;
+    acm;;
+
 let l = gen_permutation tailleListe in
 
 printf "Liste initiale :\n";
@@ -407,5 +488,7 @@ let valToSearch = 7 in
 
 if (acl_find acl valToSearch) then printf "\nLa valeur %d est dans l'ACL.\n" valToSearch
 else printf "\nLa valeur %d n'est pas dans l'ACL.\n" valToSearch;
+
+let acm = create_acm acl abrPhi in
 
 exit 0;;
